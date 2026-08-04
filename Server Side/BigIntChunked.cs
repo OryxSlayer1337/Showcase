@@ -2,11 +2,16 @@
 // No PadLeft. No offsets. No virtual padding.
 // Right-to-left operations consume 4 digits per iteration from each input's right end.
 // Uses stackalloc for small buffers, ArrayPool for large ones.
+//
+// Ported from the FNA client (Vortex FNA Engine/Core/BigIntChunked.cs) so the
+// server shares the exact same string-arithmetic tier as the client.
+// C# 7.3 / net48 adaptations: range/index operators replaced with Slice(),
+// unsafe fixed buffer in Multiply replaced with a plain char[].
 
 using System;
 using System.Buffers;
 
-namespace VortexClient.Core
+namespace common
 {
     internal static class BigIntChunked
     {
@@ -22,11 +27,11 @@ namespace VortexClient.Core
             int maxLen = a.Length > b.Length ? a.Length : b.Length;
             int bufLen = ((maxLen + CHUNK - 1) / CHUNK) * CHUNK + CHUNK;
 
-            char[]? poolBuf = null;
+            char[] poolBuf = null;
             Span<char> buf = bufLen <= STACK_MAX
                 ? stackalloc char[bufLen]
                 : (poolBuf = ArrayPool<char>.Shared.Rent(bufLen));
-            buf = buf[..bufLen];
+            buf = buf.Slice(0, bufLen);
 
             int carry = 0;
             int aRead = 0;
@@ -51,11 +56,11 @@ namespace VortexClient.Core
             int maxLen = a.Length > b.Length ? a.Length : b.Length;
             int bufLen = ((maxLen + CHUNK - 1) / CHUNK) * CHUNK;
 
-            char[]? poolBuf = null;
+            char[] poolBuf = null;
             Span<char> buf = bufLen <= STACK_MAX
                 ? stackalloc char[bufLen]
                 : (poolBuf = ArrayPool<char>.Shared.Rent(bufLen));
-            buf = buf[..bufLen];
+            buf = buf.Slice(0, bufLen);
 
             int borrow = 0;
             int aRead = 0;
@@ -80,11 +85,11 @@ namespace VortexClient.Core
         {
             int bufLen = ((a.Length + CHUNK - 1) / CHUNK) * CHUNK + CHUNK;
 
-            char[]? poolBuf = null;
+            char[] poolBuf = null;
             Span<char> buf = bufLen <= STACK_MAX
                 ? stackalloc char[bufLen]
                 : (poolBuf = ArrayPool<char>.Shared.Rent(bufLen));
-            buf = buf[..bufLen];
+            buf = buf.Slice(0, bufLen);
 
             int carry = 0;
             int aRead = 0;
@@ -108,11 +113,11 @@ namespace VortexClient.Core
         {
             int bufLen = a.Length;
 
-            char[]? poolBuf = null;
+            char[] poolBuf = null;
             Span<char> buf = bufLen <= STACK_MAX
                 ? stackalloc char[bufLen]
                 : (poolBuf = ArrayPool<char>.Shared.Rent(bufLen));
-            buf = buf[..bufLen];
+            buf = buf.Slice(0, bufLen);
 
             int rem = 0;
             for (int i = 0; i < a.Length; i++)
@@ -146,11 +151,11 @@ namespace VortexClient.Core
             int la = a.Length, lb = b.Length;
             int size = la + lb;
 
-            int[]? poolDigits = null;
+            int[] poolDigits = null;
             Span<int> digits = size <= 128
                 ? stackalloc int[size]
                 : (poolDigits = ArrayPool<int>.Shared.Rent(size));
-            digits = digits[..size];
+            digits = digits.Slice(0, size);
             digits.Clear();
 
             for (int ai = la - 1; ai >= 0; ai--)
@@ -177,16 +182,10 @@ namespace VortexClient.Core
             }
 
             int resultLen = size - start;
-            string result = new string('\0', resultLen);
-            unsafe
-            {
-                fixed (char* p = result)
-                {
-                    var span = new Span<char>(p, resultLen);
-                    for (int i = 0; i < resultLen; i++)
-                        span[i] = (char)('0' + digits[start + i]);
-                }
-            }
+            var resultChars = new char[resultLen];
+            for (int i = 0; i < resultLen; i++)
+                resultChars[i] = (char)('0' + digits[start + i]);
+            string result = new string(resultChars);
 
             if (poolDigits != null) ArrayPool<int>.Shared.Return(poolDigits);
             return result;
@@ -227,7 +226,7 @@ namespace VortexClient.Core
             int i = 0;
             while (i < s.Length && s[i] == '0') i++;
             if (i >= s.Length) return "0";
-            return new string(s[i..]);
+            return s.Slice(i).ToString();
         }
     }
 }

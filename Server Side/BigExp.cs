@@ -19,13 +19,21 @@
 // a replacement for exact math — it is the fast path for magnitudes where exact
 // digit strings cannot exist in RAM anyway.
 //
-// AS3: none (log-tier concept is FNA-native).
+// Ported 1:1 from the FNA client (Vortex FNA Engine/Core/BigExp.cs).
+// C# 7.3 / net48 adaptations:
+//   - double.IsFinite()  -> !IsNaN && !IsInfinity (not available on net48)
+//   - object? obj        -> object obj (nullable annotations are C# 8)
+// Shared display tweaks (also applied to the FNA client so both stay in sync):
+//   - Simple scientific notation: nested exponents are NOT parenthesized, so the
+//     wire form round-trips through TryParse ("1e1e100", not "1e(1e100)").
+//   - TryParse tolerates the old parenthesized form ("1e(1e100)") for stored data.
+//   - ToAbbreviated() adds the googolplex tier: 10^10^100 and beyond -> "Xgp".
 
 using System;
 using System.Globalization;
 using System.Numerics;
 
-namespace VortexClient.Core.Numbers
+namespace common
 {
     /// <summary>
     /// 16-byte exponential scalar: mantissa × 10^exponent10, where exponent10 is
@@ -99,7 +107,7 @@ namespace VortexClient.Core.Numbers
 
             if (!double.TryParse(mantissaText, NumberStyles.Float,
                                  CultureInfo.InvariantCulture, out double m) ||
-                !double.IsFinite(m))
+                double.IsNaN(m) || double.IsInfinity(m))
                 return false;
 
             double e = 0;
@@ -107,7 +115,7 @@ namespace VortexClient.Core.Numbers
             {
                 if (!double.TryParse(exponentText, NumberStyles.Float,
                                      CultureInfo.InvariantCulture, out e) ||
-                    !double.IsFinite(e))
+                    double.IsNaN(e) || double.IsInfinity(e))
                     return false;
             }
 
@@ -186,7 +194,7 @@ namespace VortexClient.Core.Numbers
             return mantissa == other.mantissa && exponent10 == other.exponent10;
         }
 
-        public override bool Equals(object? obj)
+        public override bool Equals(object obj)
             => obj is BigExp be && Equals(be);
 
         public override int GetHashCode()

@@ -1,0 +1,14 @@
+C:\Users\Demetri\Desktop\Showcase-main\obj\Release\net10.0\BigIntBench.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Demetri\Desktop\Showcase-main\obj\Release\net10.0\BigIntBench.AssemblyInfoInputs.cache
+C:\Users\Demetri\Desktop\Showcase-main\obj\Release\net10.0\BigIntBench.AssemblyInfo.cs
+C:\Users\Demetri\Desktop\Showcase-main\obj\Release\net10.0\BigIntBench.csproj.CoreCompileInputs.cache
+C:\Users\Demetri\Desktop\Showcase-main\bin\Release\net10.0\BigIntBench.exe
+C:\Users\Demetri\Desktop\Showcase-main\bin\Release\net10.0\BigIntBench.deps.json
+C:\Users\Demetri\Desktop\Showcase-main\bin\Release\net10.0\BigIntBench.runtimeconfig.json
+C:\Users\Demetri\Desktop\Showcase-main\bin\Release\net10.0\BigIntBench.dll
+C:\Users\Demetri\Desktop\Showcase-main\bin\Release\net10.0\BigIntBench.pdb
+C:\Users\Demetri\Desktop\Showcase-main\obj\Release\net10.0\BigIntBench.dll
+C:\Users\Demetri\Desktop\Showcase-main\obj\Release\net10.0\refint\BigIntBench.dll
+C:\Users\Demetri\Desktop\Showcase-main\obj\Release\net10.0\BigIntBench.pdb
+C:\Users\Demetri\Desktop\Showcase-main\obj\Release\net10.0\BigIntBench.genruntimeconfig.cache
+C:\Users\Demetri\Desktop\Showcase-main\obj\Release\net10.0\ref\BigIntBench.dll

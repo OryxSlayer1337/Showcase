@@ -11,25 +11,25 @@
 //
 // Per AGENTS.md Critical Code Rule #1 the exponent is BigInteger (never an int) so
 // no overflow can ever occur; the exact digit path remains pure string math
-// (BigIntChunked / NumberDisplay). The double approximation exists for UI
+// (BigIntChunked / BigIntUtils). The double approximation exists for UI
 // abbreviation and fill-ratio math only.
 //
-// Note: there was no "BigDouble" class in the AS3 client - legacy used purely
-// numeric strings. This FNA-native hybrid wraps the exact decimal string and the
-// derived approximate exponent pair in one immutable struct.
-// AS3 variant         C# variant
-//   (none)            digits: (string) exact significant digits
-//   (none)            intLen: (BigInteger) decimal-point position
-//   (none)            negative: (bool) sign
-//   (none)            mantissa: (double) approx mantissa in [1,10)
-//   (none)            exponent10: (BigInteger) approx decimal exponent
+// Ported 1:1 from the FNA client (Vortex FNA Engine/Core/BigDouble.cs) so the
+// server shares the same hybrid number system as the client.
+// C# 7.3 / net48 adaptations:
+//   - double.IsFinite()  -> !IsNaN && !IsInfinity (not available on net48)
+//   - object? obj        -> object obj (nullable annotations are C# 8)
+//   - ToAbbreviated()    -> NumberDisplay.FormatBigInt is client-only; server
+//                           uses the equivalent BigIntUtils.FormatAbbreviated
+// Server-only additions (not in the client file):
+//   - FitsInBigInteger / ToBigInteger / FromBigInteger (BigInteger bridge)
 
 using System;
 using System.Globalization;
 using System.Numerics;
-using VortexClient.Core;
+using System.Text;
 
-namespace VortexClient.Core.Numbers
+namespace common
 {
     /// <summary>
     /// Immutable hybrid number: exact decimal string + cached double/BigInteger
@@ -62,6 +62,10 @@ namespace VortexClient.Core.Numbers
         /// treated as non-contributing (the larger operand wins).</summary>
         private const int MaxAlignPad = 1 << 20;
 
+        /// <summary>Server-only: largest digit count the BigInteger bridge will
+        /// materialize (keeps ToBigInteger() memory-bounded).</summary>
+        public const int MaxBigIntDigits = 1 << 16;
+
         public static readonly BigDouble Zero = Parse("0");
         public static readonly BigDouble One = Parse("1");
 
@@ -93,7 +97,7 @@ namespace VortexClient.Core.Numbers
         public static BigDouble FromApprox(double mantissa, BigInteger exponent10,
                                            bool negative = false)
         {
-            if (mantissa == 0 || !double.IsFinite(mantissa))
+            if (mantissa == 0 || double.IsNaN(mantissa) || double.IsInfinity(mantissa))
                 return Zero;
 
             string m = mantissa.ToString("R", CultureInfo.InvariantCulture);
@@ -341,7 +345,7 @@ namespace VortexClient.Core.Numbers
                 && digits == other.digits;
         }
 
-        public override bool Equals(object? obj)
+        public override bool Equals(object obj)
             => obj is BigDouble bd && Equals(bd);
 
         public override int GetHashCode()
@@ -413,7 +417,7 @@ namespace VortexClient.Core.Numbers
             bool resultNeg;
             if (a.negative == b.negative)
             {
-                sumDigits = BigIntChunked.Add(ad, bd);
+                sumDigits = BigIntChunked.Add(ad.AsSpan(), bd.AsSpan());
                 resultNeg = a.negative;
             }
             else
@@ -422,12 +426,12 @@ namespace VortexClient.Core.Numbers
                 if (cmpDigit == 0) return Zero;
                 if (cmpDigit > 0)
                 {
-                    sumDigits = BigIntChunked.Subtract(ad, bd);
+                    sumDigits = BigIntChunked.Subtract(ad.AsSpan(), bd.AsSpan());
                     resultNeg = a.negative;
                 }
                 else
                 {
-                    sumDigits = BigIntChunked.Subtract(bd, ad);
+                    sumDigits = BigIntChunked.Subtract(bd.AsSpan(), ad.AsSpan());
                     resultNeg = b.negative;
                 }
             }
@@ -449,7 +453,7 @@ namespace VortexClient.Core.Numbers
         public static BigDouble Multiply(BigDouble a, BigDouble b)
         {
             if (a.IsZero || b.IsZero) return Zero;
-            string product = BigIntChunked.Multiply(a.digits, b.digits);
+            string product = BigIntChunked.Multiply(a.digits.AsSpan(), b.digits.AsSpan());
             BigInteger exp = (a.intLen - a.digits.Length) + (b.intLen - b.digits.Length);
             return NormalizeResult(product, exp, a.negative != b.negative);
         }
@@ -460,7 +464,7 @@ namespace VortexClient.Core.Numbers
             if (a.IsZero) return a;
             if (n == 1) return a;
 
-            string quotient = BigIntChunked.DivideByInt(a.digits, n, out int _);
+            string quotient = BigIntChunked.DivideByInt(a.digits.AsSpan(), n, out int _);
             BigInteger exp = a.intLen - a.digits.Length;
             return NormalizeResult(quotient, exp, a.negative);
         }
@@ -507,7 +511,7 @@ namespace VortexClient.Core.Numbers
         {
             if (n == 0) return Zero;
             if (a.IsZero) return Zero;
-            string prod = BigIntChunked.MultiplyByInt(a.digits, Math.Abs(n));
+            string prod = BigIntChunked.MultiplyByInt(a.digits.AsSpan(), Math.Abs(n));
             BigInteger exp = a.intLen - a.digits.Length;
             return NormalizeResult(prod, exp, a.negative != (n < 0));
         }
@@ -536,6 +540,19 @@ namespace VortexClient.Core.Numbers
                     ? new BigInteger(1) << 63                        // |MinValue|
                     : (new BigInteger(1) << 63) - 1;                 // MaxValue
                 return FitsInMagnitude(span);
+            }
+        }
+
+        /// <summary>Server-only: true when the exact value is a non-negative
+        /// integer BigInteger can hold (digit count bounded by MaxBigIntDigits).</summary>
+        public bool FitsInBigInteger
+        {
+            get
+            {
+                if (IsZero) return true;
+                if (intLen <= 0) return false;    // fractional value is not an integer
+                if (intLen > MaxBigIntDigits) return false;
+                return digits.Length <= MaxBigIntDigits;
             }
         }
 
@@ -582,6 +599,31 @@ namespace VortexClient.Core.Numbers
 
         public int ToInt() => ToInt32();
 
+        /// <summary>Server-only: exact integer view into System.Numerics.BigInteger.
+        /// Throws OverflowException when the value does not fit (see FitsInBigInteger).</summary>
+        public BigInteger ToBigInteger()
+        {
+            if (IsZero)
+                return BigInteger.Zero;
+            if (!FitsInBigInteger)
+                throw new OverflowException($"BigDouble value exceeds BigInteger range: {ToString()}");
+            long il = (long)intLen;
+            string intPart = il >= digits.Length
+                ? digits + new string('0', (int)(il - digits.Length))
+                : digits.Substring(0, (int)il);
+            BigInteger result = BigInteger.Parse(intPart, NumberStyles.Integer,
+                                                 CultureInfo.InvariantCulture);
+            return negative ? -result : result;
+        }
+
+        /// <summary>Server-only: exact bridge from BigInteger (plain decimal).</summary>
+        public static BigDouble FromBigInteger(BigInteger v)
+        {
+            if (v.IsZero)
+                return Zero;
+            return Parse(v.ToString(CultureInfo.InvariantCulture));
+        }
+
         /// <summary>Approx double for gauges/fill ratios (never used for exact math).
         /// Saturated to double.MaxValue instead of overflowing to Infinity.</summary>
         public double ToDouble()
@@ -624,9 +666,9 @@ namespace VortexClient.Core.Numbers
         // ── Abbreviation / display ──────────────────────────────────────
 
         /// <summary>
-        /// Renders the exact integer value via NumberDisplay's abbreviation
-        /// pipeline ("1234567" → "1.23M"). Switches to compact scientific when
-        /// the expansion would blow the RAM budget.
+        /// Renders the exact integer value via BigIntUtils.FormatAbbreviated
+        /// ("1234567" → "1.23M"). Switches to compact scientific when the
+        /// expansion would blow the RAM budget.
         /// </summary>
         public string ToAbbreviated(int decimals = 2)
         {
@@ -638,8 +680,10 @@ namespace VortexClient.Core.Numbers
             string integer = il >= digits.Length
                 ? digits + new string('0', (int)(il - digits.Length))
                 : digits.Substring(0, (int)il);
-            string sign = negative ? "-" : "";
-            return sign + NumberDisplay.FormatBigInt(integer, decimals);
+            BigInteger bi = BigInteger.Parse(integer, NumberStyles.Integer,
+                                             CultureInfo.InvariantCulture);
+            return negative ? "-" + BigIntUtils.FormatAbbreviated(bi, decimals)
+                            : BigIntUtils.FormatAbbreviated(bi, decimals);
         }
 
         /// <summary>Same as ToString but with thousands separators.</summary>
@@ -653,7 +697,7 @@ namespace VortexClient.Core.Numbers
                 return ToString();
 
             long il = (long)intLen;
-            var builder = new System.Text.StringBuilder();
+            var builder = new StringBuilder();
 
             if (il <= digits.Length)
             {
