@@ -1,4 +1,4 @@
-# Shifted BigInts - Code Showcase
+﻿# Shifted BigInts - Code Showcase
 
 Extracted arrow-notation scaling arithmetic and the supporting short-suffix number
 types from **Absentia**. The gameplay
@@ -14,14 +14,14 @@ what the game uses.
 
 | Showcase file | Production source | Shared | Match |
 |---|---|---|---|
-| `FNA Client Side\BigDouble.cs` | `Vortex FNA Engine\src\Core\BigDouble.cs` | &mdash; | Byte-identical |
-| `FNA Client Side\BigExp.cs` | `Vortex FNA Engine\src\Core\BigExp.cs` | &mdash; | Byte-identical |
-| `FNA Client Side\BigIntChunked.cs` | `Vortex FNA Engine\src\Core\BigIntChunked.cs` | &mdash; | Byte-identical |
-| `FNA Client Side\NumberDisplay.cs` | `Vortex FNA Engine\src\Core\NumberDisplay.cs` | &mdash; | Byte-identical |
-| `FNA Client Side\NumberDisplayScales.cs` | `Vortex FNA Engine\src\Core\NumberDisplayScales.cs` | &mdash; | Byte-identical |
-| `Server Side\BigDouble.cs` | `Vortex Server\common\BigDouble.cs` | shared, client &amp; server | Byte-identical |
-| `Server Side\BigExp.cs` | `Vortex Server\common\BigExp.cs` | shared, client &amp; server | Byte-identical |
-| `Server Side\BigIntChunked.cs` | `Vortex Server\common\BigIntChunked.cs` | shared, client &amp; server | Byte-identical |
+| `FNA Client Side\BigDouble.cs` | `Vortex FNA Engine\src\Core\BigDouble.cs` | -- | Byte-identical |
+| `FNA Client Side\BigExp.cs` | `Vortex FNA Engine\src\Core\BigExp.cs` | -- | Byte-identical |
+| `FNA Client Side\BigIntChunked.cs` | `Vortex FNA Engine\src\Core\BigIntChunked.cs` | -- | Byte-identical |
+| `FNA Client Side\NumberDisplay.cs` | `Vortex FNA Engine\src\Core\NumberDisplay.cs` | -- | Byte-identical |
+| `FNA Client Side\NumberDisplayScales.cs` | `Vortex FNA Engine\src\Core\NumberDisplayScales.cs` | -- | Byte-identical |
+| `Server Side\BigDouble.cs` | `Vortex Server\common\BigDouble.cs` | shared, client & server | Byte-identical |
+| `Server Side\BigExp.cs` | `Vortex Server\common\BigExp.cs` | shared, client & server | Byte-identical |
+| `Server Side\BigIntChunked.cs` | `Vortex Server\common\BigIntChunked.cs` | shared, client & server | Byte-identical |
 | `Server Side\BigIntUtils.cs` | `Vortex Server\common\BigIntUtils.cs` | server-only | 1 added line, see below |
 | `Server Side\NReader.cs` | `Vortex Server\common\NReader.cs` | server-only | Trailing line-ending drift |
 | `Server Side\NWriter.cs` | `Vortex Server\common\NWriter.cs` | server-only | Trailing line-ending drift |
@@ -34,20 +34,47 @@ what the game uses.
   **benchmark** harness (it links the client and server halves into one .NET 10
   console app without the original solution/namespace structure); the **server**
   build gets the file as-is with no `using`. The full `AbbrevScales` table
-  (K up to `YZCePi`, exponents 0&ndash;462) and every helper method are unchanged.
+  (K up to `YZCePi`, exponents 0-462) and every helper method are unchanged.
 - **`NReader.cs` / `NWriter.cs`** - same content line-for-line; production ends
   with one extra trailing blank line (CRLF drift from the repo's `.gitattributes`).
   No functional difference.
 - Everything else is byte-identical, CRLF-normalized.
 
+## Running the benchmark
+
+```
+dotnet run -c Release
+```
+
+Requires the .NET 10 SDK. The console app links the client and server halves
+(that's why `BigIntUtils.cs` carries the extra `using VortexClient.Core.Numbers;`,
+see the delta note above) and runs:
+
+- **Sanity checks** — 14 round-trips verify abbreviated strings parse back to the
+  same `BigExp`, so the contract holds before timing starts.
+- **Per-benchmark timing** — iterations, total ms, ops/sec, allocated MB,
+  bytes/op, CPU %, and RAM delta for each of the five exercised files:
+  `BigIntChunked`, `BigIntUtils`, `NumberDisplay`, `NumberDisplayScales`,
+  `StringInt` (e.g. `FormatAbbreviated` on a 500-digit `BigInteger`, the
+  `FormattedNumberCache` hit path at ~179M ops/sec, big-string add/sub/mul/div).
+- **Process resource summary** — CPU time, working set / private memory, managed
+  heap, plus the raw and abbreviated highest/lowest numbers and a
+  tower-abbr round-trip check (`BigExp.Parse` -> abbreviated form ->
+  back), which is what makes the suffix table lockstep testable.
+- Diagnostics: pass `--diag` / `--diagnostic` / `--trace`, or set
+  `BIGINTBENCH_DIAGNOSTIC=1`.
+
+A prior run is saved in `benchmark-output.txt` (UTF-16; 14/14 sanity checks
+passed, total run time ~1.1 s on 12 logical processors).
+
 ## What's interesting
 
 - **Short suffixes go farther than the base game.** The production
   `AbbrevScales` table goes out to 10^462 (`YZCePi`), versus the vanilla
-  ~10^18 (&ldquo;Qd&rdquo;) the unmodified client hard-codes.
-- **Exponent delta is the key.** A number &ge; 10^exponent gets the suffix shown;
+  ~10^18 ("Qd") the unmodified client hard-codes.
+- **Exponent delta is the key.** A number >= 10^exponent gets the suffix shown;
   the table is the contract trusted by both `client` and `server`, and it has to
   stay in lockstep with what the game writes to the ledger.
 - **One implementation, two halves.** The `FNA Client Side` (client render) and
   `Server Side` (server persistence) versions are literally the same real
-  one &mdash; checked byte-for-byte against the production repo.
+  one -- checked byte-for-byte against the production repo.
