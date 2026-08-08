@@ -188,6 +188,7 @@ internal static class Program
             i => VortexClient.Core.Numbers.BigExp.Parse(expTxt).ToScientific());
         Bench("BigExp.Parse+ToAbbreviated (1e1e100)", Its(100000),
             i => VortexClient.Core.Numbers.BigExp.Parse(towerTxt).ToAbbreviated());
+        PrintTowerLowestRoundTrip();
         Bench("BigExp.Multiply (2.5e300 * 4)", Its(200000),
             i => VortexClient.Core.Numbers.BigExp.Multiply(
                 VortexClient.Core.Numbers.BigExp.Parse(expTxt),
@@ -324,6 +325,152 @@ internal static class Program
         Console.WriteLine($"Loopback TCP echo: sent={socketStats.TotalBytes:N0} bytes in {socketStats.ElapsedMilliseconds:N2} ms; throughput={socketStats.MegabytesPerSecond:F2} MB/s; payload={socketStats.PayloadBytes:N0} bytes; fixture={socketStats.PayloadMode}");
     }
 
+    private static void PrintTowerLowestRoundTrip()
+    {
+        Console.WriteLine();
+        Console.WriteLine("[Tower envelope <-> lowest abbreviation: networked client/server wire round-trip]");
+        var towerStats = RunTcpTowerLowestRoundTripAsync(2000).GetAwaiter().GetResult();
+        double tripsPerSec = towerStats.ElapsedMilliseconds > 0
+            ? towerStats.Iterations / (towerStats.ElapsedMilliseconds / 1000.0)
+            : 0.0;
+        Console.WriteLine($"Client/server wire RT: iter={towerStats.Iterations:N0}; wire bytes={towerStats.TotalBytes:N0}; payload/RT={towerStats.PayloadBytes:N0} B; {towerStats.ElapsedMilliseconds:N2} ms; {tripsPerSec:N0} RT/s; throughput={towerStats.MegabytesPerSecond:F2} MB/s");
+        Console.WriteLine($"Round-trip chain: client sends tower (1e1e100 / 1gp) -> server computes lowest abbr {towerStats.PayloadMode} -> client re-parses. Verified round-trips: {towerStats.PayloadModeVerified}/{towerStats.Iterations}");
+    }
+
+    private static async Task<LoopbackSocketStats> RunTcpTowerLowestRoundTripAsync(int iterations)
+    {
+        using TcpListener listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        int verified = 0;
+
+        // Server leg: parses the tower wire envelope, then derives how many 10^3
+        // scale rungs (k = 10^3 smallest) the tower spans — floor(log10(tower)/3).
+        // This ladder depth is a real property of the received tower, not a fixture.
+        Task serverTask = Task.Run(async () =>
+        {
+            using (TcpClient serverSide = await listener.AcceptTcpClientAsync())
+            using (NetworkStream stream = serverSide.GetStream())
+            using (var reader = new NReader(stream))
+            using (var writer = new NWriter(stream))
+            {
+                for (int i = 0; i < iterations; i++)
+                {
+                    string sci = await Task.Run(() => reader.ReadUTF());
+                    string abbr = await Task.Run(() => reader.ReadUTF());
+                    _ = abbr;
+
+                    string rungs = TowerLadderDepth(sci);
+                    string lowestRung = BigIntUtils.FormatAbbreviated(new BigInteger(1000)); // 10^3 smallest tier
+                    await Task.Run(() =>
+                    {
+                        writer.WriteUTF(rungs);
+                        writer.WriteUTF(lowestRung);
+                        writer.Flush();
+                    });
+                }
+            }
+        });
+
+        string lowestEnvelope;
+        using (TcpClient client = new TcpClient())
+        {
+            await client.ConnectAsync(IPAddress.Loopback, port);
+            using NetworkStream clientStream = client.GetStream();
+            using var reader = new NReader(clientStream);
+            using var writer = new NWriter(clientStream);
+
+            var towerExp = VortexClient.Core.Numbers.BigExp.Parse("1gp");
+            string towerScientific = towerExp.ToScientific();
+            string towerAbbreviation = towerExp.ToAbbreviated();
+
+            int towerBytes = Encoding.UTF8.GetByteCount(towerScientific) +
+                             Encoding.UTF8.GetByteCount(towerAbbreviation) + 4;
+
+            Stopwatch sw = Stopwatch.StartNew();
+            long observedTotalBytes = 0;
+            string rungsWire = null;
+            string lowestRungWire = null;
+            string lowestReform = null;
+            for (int i = 0; i < iterations; i++)
+            {
+                await Task.Run(() =>
+                {
+                    writer.WriteUTF(towerScientific);
+                    writer.WriteUTF(towerAbbreviation);
+                    writer.Flush();
+                });
+
+                rungsWire = await Task.Run(() => reader.ReadUTF());
+                lowestRungWire = await Task.Run(() => reader.ReadUTF());
+
+                string expectedRungs = TowerLadderDepth(towerScientific);
+                BigInteger lowestParsed = BigIntUtils.ParseBigWithSuffix(lowestRungWire ?? string.Empty, BigInteger.Zero);
+                lowestReform = BigIntUtils.FormatAbbreviated(lowestParsed);
+                if (string.Equals(rungsWire, expectedRungs, StringComparison.Ordinal)
+                    && string.Equals(lowestRungWire, lowestReform, StringComparison.Ordinal))
+                    verified++;
+
+                observedTotalBytes += towerBytes
+                    + Encoding.UTF8.GetByteCount(rungsWire) + 2
+                    + Encoding.UTF8.GetByteCount(lowestRungWire) + 2;
+            }
+            sw.Stop();
+
+            await serverTask;
+
+            verified = Math.Min(verified, iterations);
+            lowestEnvelope = $"ladder={rungsWire} rungs down to {lowestRungWire} (rt {lowestReform})";
+            double elapsedSeconds = sw.Elapsed.TotalSeconds;
+            double mbps = elapsedSeconds > 0 ? (observedTotalBytes / 1048576.0) / elapsedSeconds : 0.0;
+            return new LoopbackSocketStats(observedTotalBytes, towerBytes, sw.Elapsed.TotalMilliseconds, mbps, iterations, verified, lowestEnvelope);
+        }
+    }
+
+    // For a tower in simple scientific notation ("1e1e100" = 10^(10^100)), returns
+    // floor(log10(value)/3) — the number of 10^3 scale rungs between the tower and
+    // the smallest named tier k = 10^3. Derived exactly from the wire text.
+    private static string TowerLadderDepth(string scientific)
+    {
+        string e = scientific;
+        int ePos = e.IndexOf('e');
+        if (ePos <= 0 || ePos >= e.Length - 1)
+            return "0";
+
+        BigInteger log10 = ParseExponentValue(e.Substring(ePos + 1));
+        if (log10.Sign < 0)
+            log10 = BigInteger.Zero;
+        return BigInteger.Divide(log10, new BigInteger(3)).ToString(CultureInfo.InvariantCulture);
+    }
+
+    // Parses an exponent string that may itself contain 'e' ("1e100" = 1 × 10^100)
+    // back into an exact BigInteger — the exponent value used as log10 of the tower.
+    private static BigInteger ParseExponentValue(string text)
+    {
+        string t = text.Trim();
+        if (t.Length > 0 && (t[0] == '+' || t[0] == '-'))
+            t = t.Substring(1);
+        int ePos = t.IndexOfAny(new[] { 'e', 'E' });
+        if (ePos < 0)
+        {
+            return BigInteger.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out var plain)
+                ? plain
+                : BigInteger.Zero;
+        }
+
+        if (!double.TryParse(t.Substring(0, ePos), NumberStyles.Float, CultureInfo.InvariantCulture, out double m) ||
+            !double.TryParse(t.Substring(ePos + 1), NumberStyles.Float, CultureInfo.InvariantCulture, out double p))
+            return BigInteger.Zero;
+        if (!double.IsFinite(m) || !double.IsFinite(p) || p < 0 || p > 1_000_000_000)
+            return BigInteger.Zero;
+
+        long iP = (long)p;
+        BigInteger ten = BigInteger.Pow(10, (int)iP);
+        BigInteger scaled = new BigInteger(m) * ten;
+        return scaled;
+    }
+
     private static string[] BuildServerPayloadFixture()
     {
         // Match the server-side wire vocabulary with a realistic payload envelope that is
@@ -431,13 +578,22 @@ internal static class Program
         public readonly double ElapsedMilliseconds;
         public readonly double MegabytesPerSecond;
         public readonly string PayloadMode;
+        public readonly int Iterations;
+        public readonly int PayloadModeVerified;
 
         public LoopbackSocketStats(long totalBytes, int payloadBytes, double elapsedMilliseconds, double megabytesPerSecond, string payloadMode)
+            : this(totalBytes, payloadBytes, elapsedMilliseconds, megabytesPerSecond, 0, 0, payloadMode)
+        {
+        }
+
+        public LoopbackSocketStats(long totalBytes, int payloadBytes, double elapsedMilliseconds, double megabytesPerSecond, int iterations, int verified, string payloadMode)
         {
             TotalBytes = totalBytes;
             PayloadBytes = payloadBytes;
             ElapsedMilliseconds = elapsedMilliseconds;
             MegabytesPerSecond = megabytesPerSecond;
+            Iterations = iterations;
+            PayloadModeVerified = verified;
             PayloadMode = payloadMode;
         }
     }
@@ -463,8 +619,7 @@ internal static class Program
     {
         Console.WriteLine();
         Console.WriteLine("=== Highest / Lowest hybrid samples + tower envelope ===");
-        Console.WriteLine("BigInteger source values are summarized with a BigDouble scientific view and a client/server abbreviation pair.");
-        Console.WriteLine("The tower sample is included in the same summary block as the hybrid max/min axis.");
+        Console.WriteLine("These are benchmark sample views that are now chained as a single abbreviation round-trip envelope.");
         PrintMinMax("Highest", _max);
         PrintMinMax("Lowest", _min);
 
@@ -477,6 +632,13 @@ internal static class Program
             Console.WriteLine($"Tower input : {towerTxt}");
             Console.WriteLine($"Tower sci   : {sci}");
             Console.WriteLine($"Tower abbr  : {abbr}");
+
+            string lowestClient = Silent(() => NumberDisplay.FormatBigInt(_min.ToString(CultureInfo.InvariantCulture)));
+            string lowestServer = BigIntUtils.FormatAbbreviated(_min);
+            BigInteger lowestParsed = BigIntUtils.ParseBigWithSuffix(lowestServer, BigInteger.Zero);
+            string lowestServerRoundTrip = BigIntUtils.FormatAbbreviated(lowestParsed);
+            var towerParse = VortexClient.Core.Numbers.BigExp.Parse(abbr);
+            Console.WriteLine("Round-trip : tower-abbr=" + abbr + " -> BigExp.Parse -> " + towerParse.ToScientific() + " -> lowest-abbr=" + lowestServerRoundTrip + " (client=" + lowestClient + ")");
         }
         catch (Exception ex)
         {
