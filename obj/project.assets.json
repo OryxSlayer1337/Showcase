@@ -14,11 +14,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Demetri\\Desktop\\Showcase-main\\BigIntBench.csproj",
+      "projectUniqueName": "C:\\Users\\Demetri\\Documents\\GitHub\\Showcase\\BigIntBench.csproj",
       "projectName": "BigIntBench",
-      "projectPath": "C:\\Users\\Demetri\\Desktop\\Showcase-main\\BigIntBench.csproj",
+      "projectPath": "C:\\Users\\Demetri\\Documents\\GitHub\\Showcase\\BigIntBench.csproj",
       "packagesPath": "C:\\Users\\Demetri\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Demetri\\Desktop\\Showcase-main\\obj\\",
+      "outputPath": "C:\\Users\\Demetri\\Documents\\GitHub\\Showcase\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
