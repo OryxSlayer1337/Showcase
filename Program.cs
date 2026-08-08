@@ -457,14 +457,31 @@ internal static class Program
         Console.WriteLine();
     }
 
-    // ─── Summary (highest/lowest raw + abbreviated, CPU/RAM totals) ────
+    // ─── Summary (simple high/low + tower, CPU/RAM totals) ────
 
     private static void PrintSummary(string[] data)
     {
         Console.WriteLine();
-        Console.WriteLine("=== Highest / Lowest numbers (scientific + abbreviated) ===");
+        Console.WriteLine("=== Highest / Lowest hybrid samples + tower envelope ===");
+        Console.WriteLine("BigInteger source values are summarized with a BigDouble scientific view and a client/server abbreviation pair.");
+        Console.WriteLine("The tower sample is included in the same summary block as the hybrid max/min axis.");
         PrintMinMax("Highest", _max);
         PrintMinMax("Lowest", _min);
+
+        string towerTxt = "1e1e100";
+        try
+        {
+            var expValue = VortexClient.Core.Numbers.BigExp.Parse(towerTxt);
+            string sci = expValue.ToScientific();
+            string abbr = expValue.ToAbbreviated();
+            Console.WriteLine($"Tower input : {towerTxt}");
+            Console.WriteLine($"Tower sci   : {sci}");
+            Console.WriteLine($"Tower abbr  : {abbr}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Tower sample did not render: {ex.GetType().Name}: {ex.Message}");
+        }
 
         Console.WriteLine();
         Console.WriteLine("=== Process resource summary ===");
