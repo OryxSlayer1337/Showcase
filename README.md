@@ -1,7 +1,7 @@
 # Shifted BigInts - Code Showcase
 
 Extracted arrow-notation scaling arithmetic and the supporting short-suffix number
-types from **Absentia**. The gameplay
+types from **Absentina**. The gameplay
 amounts in that game pass through this code whenever an item with a big "value",
 "feed power", or "fame" number is rendered to the client, so these classes sit in
 the hot path of every economy-based packet.
