@@ -70,7 +70,7 @@ passed, total run time ~1.5 s on 12 logical processors).
 
 - **Short suffixes go farther than the base game.** The production
   `AbbrevScales` table goes out to $10^{10^{100}}$ (`gp`), versus the vanilla
-  ~10^10^308 ("Zgp") the unmodified client hard-codes.
+  ~2.14x10^9 ("2.14 Billion or the max int32 integer") the unmodified client hard-codes.
 - **Exponent delta is the key.** A number >= 10^exponent gets the suffix shown;
   the table is the contract trusted by both `client` and `server`, and it has to
   stay in lockstep with what the game writes to the ledger.
