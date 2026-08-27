@@ -65,13 +65,10 @@ Echo request/response: 5k iterations, 3.71 MB allocated, 777 bytes/op, ~212k ops
 
 === Highest / Lowest hybrid samples + tower envelope ===
 These are benchmark sample views that are now chained as a single abbreviation round-trip envelope.
-Highest  sci : 9.999999999e499  (500 digits)
-Highest  abbr: client=99.99e498  server=999.99e499
+Highest  sci : 1e1e100  (10^100 digits)
+Highest  abbr: client=1gp  server=1gp
 Lowest   sci : -9.999999999e119  (121 digits)
 Lowest   abbr: client=-999.99OcTg  server=-999.99OcTg
-Tower input : 1e1e100
-Tower sci   : 1e1e100
-Tower abbr  : 1gp
 Round-trip : tower-abbr=1gp -> BigExp.Parse -> 1e1e100 -> lowest-abbr=-999.99OcTg (client=-999.99OcTg)
 
 === Process resource summary ===
