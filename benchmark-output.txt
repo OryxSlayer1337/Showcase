@@ -80,8 +80,5 @@ Paged memory (now)  : 19.74 MB
 Managed heap (GC)   : 0.20 MB
 Logical processors  : 12
 Framework           : .NET 10.0.10
-OS                  : Microsoft Windows 10.0.26200
-
 
 Total benchmark run time: 1.08 s
-Press Enter to close...
