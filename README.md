@@ -77,3 +77,5 @@ passed, total run time ~1.5 s on 12 logical processors).
 - **One implementation, two halves.** The `FNA Client Side` (client render) and
   `Server Side` (server persistence) versions are literally the same real
   one -- checked byte-for-byte against the production repo.
+
+**Demetri Silver** | [dvsilver1198@hotmail.com](mailto:dvsilver1198@hotmail.com) | [View Resume](resume.pdf)
